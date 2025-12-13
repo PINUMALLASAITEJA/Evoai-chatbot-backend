@@ -16,7 +16,14 @@ load_dotenv(dotenv_path="config/.env")
 # Initialize Flask app
 # -------------------------------
 app = Flask(__name__)
-CORS(app)
+CORS(
+    app,
+    supports_credentials=True,
+    origins=[
+        "https://evoai-chatbot-frontend.vercel.app"
+    ]
+)
+
 app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
 
 # -------------------------------
