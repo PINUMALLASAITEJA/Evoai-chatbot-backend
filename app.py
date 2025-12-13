@@ -4,7 +4,6 @@ from flask import Flask, request, jsonify, session
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
-from bson.objectid import ObjectId
 
 # ---------------------------------
 # Flask app
@@ -12,18 +11,18 @@ from bson.objectid import ObjectId
 app = Flask(__name__)
 
 # ---------------------------------
-# Session config (CRITICAL)
+# Session config
 # ---------------------------------
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback-secret")
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="None",   # REQUIRED for cross-site
-    SESSION_COOKIE_SECURE=True        # REQUIRED for HTTPS (Render/Vercel)
+    SESSION_COOKIE_SAMESITE="None",
+    SESSION_COOKIE_SECURE=True
 )
 
 # ---------------------------------
-# CORS (CRITICAL)
+# CORS
 # ---------------------------------
 CORS(
     app,
@@ -50,18 +49,20 @@ chat_history = db["chat_history"]
 AI_API_URL = os.getenv("AI_API_URL")
 
 # ---------------------------------
-# Health check
+# Health
 # ---------------------------------
 @app.route("/")
 def health():
-    return jsonify({"status": "ok", "service": "EVO-AI backend"})
+    return jsonify({"status": "ok"})
 
 # ---------------------------------
 # REGISTER
 # ---------------------------------
 @app.route("/api/register", methods=["POST"])
 def api_register():
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
 
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
@@ -83,7 +84,9 @@ def api_register():
 # ---------------------------------
 @app.route("/api/login", methods=["POST"])
 def api_login():
-    data = request.get_json(force=True)
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
 
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
@@ -107,18 +110,16 @@ def api_chat():
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = request.get_json(force=True)
-    message = data.get("message", "").strip()
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
 
+    message = data.get("message", "").strip()
     if not message:
         return jsonify({"response": "❌ Empty message"})
 
     if AI_API_URL:
-        r = requests.post(
-            AI_API_URL,
-            json={"message": message},
-            timeout=60
-        )
+        r = requests.post(AI_API_URL, json={"message": message}, timeout=60)
         response = r.json().get("response", "No AI response")
     else:
         response = f"You said: {message}"
@@ -140,7 +141,7 @@ def api_logout():
     return jsonify({"message": "Logged out"})
 
 # ---------------------------------
-# Run (Render)
+# Run
 # ---------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
