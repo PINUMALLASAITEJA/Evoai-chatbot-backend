@@ -11,27 +11,51 @@ from flask_cors import CORS
 app = Flask(__name__)
 
 # ---------------------------------
-# Session config
+# Session config (CRITICAL)
 # ---------------------------------
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback-secret")
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="None",
-    SESSION_COOKIE_SECURE=True
+    SESSION_COOKIE_SAMESITE="None",   # REQUIRED for cross-site cookies
+    SESSION_COOKIE_SECURE=True        # REQUIRED on HTTPS (Render)
 )
 
 # ---------------------------------
-# CORS
+# CORS (CORRECT + SAFE)
 # ---------------------------------
 CORS(
     app,
-    supports_credentials=True,
-    origins=[
-        "https://evoai-chatbot-frontend.vercel.app",
-        "https://evoai-chatbot-frontend-8zns9rq1c-pinumalla-sai-tejas-projects.vercel.app"
-    ]
+    resources={
+        r"/api/*": {
+            "origins": [
+                "https://evoai-chatbot-frontend.vercel.app",
+                "https://evoai-chatbot-frontend-8zns9rq1c-pinumalla-sai-tejas-projects.vercel.app"
+            ]
+        }
+    },
+    supports_credentials=True
 )
+
+# ---------------------------------
+# Force headers for preflight
+# ---------------------------------
+@app.after_request
+def after_request(response):
+    response.headers.add(
+        "Access-Control-Allow-Origin",
+        request.headers.get("Origin", "")
+    )
+    response.headers.add("Access-Control-Allow-Credentials", "true")
+    response.headers.add(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization"
+    )
+    response.headers.add(
+        "Access-Control-Allow-Methods",
+        "GET, POST, OPTIONS"
+    )
+    return response
 
 # ---------------------------------
 # MongoDB
@@ -53,13 +77,16 @@ AI_API_URL = os.getenv("AI_API_URL")
 # ---------------------------------
 @app.route("/")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "service": "EVO-AI backend"})
 
 # ---------------------------------
 # REGISTER
 # ---------------------------------
-@app.route("/api/register", methods=["POST"])
+@app.route("/api/register", methods=["POST", "OPTIONS"])
 def api_register():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "Invalid JSON"}), 400
@@ -82,8 +109,11 @@ def api_register():
 # ---------------------------------
 # LOGIN
 # ---------------------------------
-@app.route("/api/login", methods=["POST"])
+@app.route("/api/login", methods=["POST", "OPTIONS"])
 def api_login():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "Invalid JSON"}), 400
@@ -105,8 +135,11 @@ def api_login():
 # ---------------------------------
 # CHAT
 # ---------------------------------
-@app.route("/api/chat", methods=["POST"])
+@app.route("/api/chat", methods=["POST", "OPTIONS"])
 def api_chat():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
@@ -135,13 +168,16 @@ def api_chat():
 # ---------------------------------
 # LOGOUT
 # ---------------------------------
-@app.route("/api/logout", methods=["POST"])
+@app.route("/api/logout", methods=["POST", "OPTIONS"])
 def api_logout():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
     session.clear()
     return jsonify({"message": "Logged out"})
 
 # ---------------------------------
-# Run
+# Run (Render)
 # ---------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
