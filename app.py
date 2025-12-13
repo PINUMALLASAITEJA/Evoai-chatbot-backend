@@ -41,9 +41,11 @@ AI_API_URL = os.getenv("AI_API_URL")  # Render URL
 
 @app.route("/")
 def home():
-    if "user_id" in session:
-        return redirect(url_for("chatbot"))
-    return render_template("index.html")
+    return jsonify({
+        "status": "OK",
+        "message": "EVO-AI backend is running"
+    })
+
 
 # -------------------------------
 # Login
