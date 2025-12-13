@@ -1,179 +1,85 @@
 import os
 import requests
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash
+from flask import Flask, request, jsonify, session
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
 from bson.objectid import ObjectId
 
-# -------------------------------
+# ---------------------------------
 # Load environment variables
-# -------------------------------
-load_dotenv(dotenv_path="config/.env")
+# ---------------------------------
+load_dotenv()
 
-# -------------------------------
-# Initialize Flask app
-# -------------------------------
+# ---------------------------------
+# Flask app
+# ---------------------------------
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
-
+# ---------------------------------
+# CORS (VERY IMPORTANT)
+# ---------------------------------
 CORS(
     app,
     supports_credentials=True,
     origins=[
         "https://evoai-chatbot-frontend.vercel.app",
-        "https://evoai-chatbot-frontend-a3lychp50-pinumalla-sai-tejas-projects.vercel.app"
+        "https://evoai-chatbot-frontend-8zns9rq1c-pinumalla-sai-tejas-projects.vercel.app"
     ]
 )
 
-
-app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
-
-# -------------------------------
-# MongoDB setup
-# -------------------------------
+# ---------------------------------
+# MongoDB
+# ---------------------------------
 MONGO_URI = os.getenv("MONGO_URI")
-MONGO_DB = "EVO_AI_DB"
+client = MongoClient(MONGO_URI)
+db = client["EVO_AI_DB"]
 
-client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-db = client[MONGO_DB]
 users = db["users"]
 chat_history = db["chat_history"]
 
-# -------------------------------
-# Render AI API
-# -------------------------------
-AI_API_URL = os.getenv("AI_API_URL")  # Render URL
+# ---------------------------------
+# AI backend (optional)
+# ---------------------------------
+AI_API_URL = os.getenv("AI_API_URL")
 
-# -------------------------------
-# Routes
-# -------------------------------
-
+# ---------------------------------
+# Health check
+# ---------------------------------
 @app.route("/")
-def home():
-    return jsonify({
-        "status": "OK",
-        "message": "EVO-AI backend is running"
-    })
+def health():
+    return jsonify({"status": "ok", "service": "EVO-AI backend"})
 
+# ---------------------------------
+# REGISTER (JSON)
+# ---------------------------------
+@app.route("/api/register", methods=["POST"])
+def api_register():
+    data = request.get_json()
 
-# -------------------------------
-# Login
-# -------------------------------
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        email = request.form["email"].strip().lower()
-        password = request.form["password"]
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
 
-        user = users.find_one({"email": email})
-        if user and check_password_hash(user["password"], password):
-            session["user_id"] = str(user["_id"])
-            flash("Login successful", "success")
-            return redirect(url_for("chatbot"))
+    if not email or not password:
+        return jsonify({"error": "Email and password required"}), 400
 
-        flash("Invalid email or password.", "danger")
+    if users.find_one({"email": email}):
+        return jsonify({"error": "Email already exists"}), 409
 
-    return render_template("login.html")
+    hashed = generate_password_hash(password)
+    user = users.insert_one({"email": email, "password": hashed})
 
-# -------------------------------
-# Register
-# -------------------------------
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        email = request.form["email"].strip().lower()
-        password = request.form["password"]
+    session["user_id"] = str(user.inserted_id)
+    return jsonify({"message": "Registered successfully"})
 
-        if users.find_one({"email": email}):
-            flash("Email already registered.", "warning")
-            return redirect(url_for("login"))
-
-        hashed_password = generate_password_hash(password)
-        new_user = users.insert_one({
-            "email": email,
-            "password": hashed_password
-        })
-
-        session["user_id"] = str(new_user.inserted_id)
-        flash("Registration successful!", "success")
-        return redirect(url_for("chatbot"))
-
-    return render_template("register.html")
-
-# -------------------------------
-# Chat UI
-# -------------------------------
-@app.route("/chatbot")
-def chatbot():
-    if "user_id" not in session:
-        flash("Please log in first.", "warning")
-        return redirect(url_for("login"))
-    return render_template("chat.html")
-
-# -------------------------------
-# Chat API (CALLS RENDER)
-# -------------------------------
-@app.route("/get_response", methods=["POST"])
-def get_response():
-    if "user_id" not in session:
-        return jsonify({"response": "Unauthorized"}), 401
-
-    user_input = request.json.get("message", "").strip()
-    user_id = session.get("user_id")
-
-    if not user_input:
-        return jsonify({"response": "❌ Empty input."})
-
-    try:
-        # Call Render AI backend
-        r = requests.post(
-            AI_API_URL,
-            json={
-                "message": user_input,
-                "user_id": user_id
-            },
-            timeout=60
-        )
-
-        r.raise_for_status()
-        response = r.json().get("response", "⚠️ No response from AI")
-
-        # Save history
-        chat_history.insert_one({
-            "user_id": user_id,
-            "user_input": user_input,
-            "bot_response": response
-        })
-
-        return jsonify({"response": response})
-
-    except Exception as e:
-        print("AI ERROR:", e)
-        return jsonify({"response": "⚠️ AI service unavailable."})
-
-# -------------------------------
-# Logout
-# -------------------------------
-@app.route("/logout")
-def logout():
-    session.clear()
-    flash("Logged out successfully.", "info")
-    return redirect(url_for("login"))
-
-# -------------------------------
-# Run
-# -------------------------------
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+# ---------------------------------
+# LOGIN (JSON)
+# ---------------------------------
 @app.route("/api/login", methods=["POST"])
 def api_login():
     data = request.get_json()
-
-    if not data:
-        return jsonify({"error": "Invalid JSON"}), 400
 
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
@@ -188,3 +94,51 @@ def api_login():
 
     session["user_id"] = str(user["_id"])
     return jsonify({"message": "Login successful"})
+
+# ---------------------------------
+# CHAT API
+# ---------------------------------
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    message = data.get("message", "").strip()
+
+    if not message:
+        return jsonify({"response": "❌ Empty message"})
+
+    # If using external AI service
+    if AI_API_URL:
+        r = requests.post(
+            AI_API_URL,
+            json={"message": message},
+            timeout=60
+        )
+        response = r.json().get("response", "No AI response")
+    else:
+        response = f"You said: {message}"
+
+    chat_history.insert_one({
+        "user_id": session["user_id"],
+        "user_input": message,
+        "bot_response": response
+    })
+
+    return jsonify({"response": response})
+
+# ---------------------------------
+# LOGOUT
+# ---------------------------------
+@app.route("/api/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify({"message": "Logged out"})
+    
+# ---------------------------------
+# Run (Render)
+# ---------------------------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
