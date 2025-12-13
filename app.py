@@ -168,3 +168,23 @@ def logout():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
+
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+
+    if not email or not password:
+        return jsonify({"error": "Email and password required"}), 400
+
+    user = users.find_one({"email": email})
+
+    if not user or not check_password_hash(user["password"], password):
+        return jsonify({"error": "Invalid email or password"}), 401
+
+    session["user_id"] = str(user["_id"])
+    return jsonify({"message": "Login successful"})
