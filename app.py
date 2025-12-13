@@ -2,24 +2,28 @@ import os
 import requests
 from flask import Flask, request, jsonify, session
 from pymongo import MongoClient
-from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
 from bson.objectid import ObjectId
 
 # ---------------------------------
-# Load environment variables
-# ---------------------------------
-load_dotenv()
-
-# ---------------------------------
 # Flask app
 # ---------------------------------
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
 # ---------------------------------
-# CORS (VERY IMPORTANT)
+# Session config (CRITICAL)
+# ---------------------------------
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback-secret")
+
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="None",   # REQUIRED for cross-site
+    SESSION_COOKIE_SECURE=True        # REQUIRED for HTTPS (Render/Vercel)
+)
+
+# ---------------------------------
+# CORS (CRITICAL)
 # ---------------------------------
 CORS(
     app,
@@ -41,7 +45,7 @@ users = db["users"]
 chat_history = db["chat_history"]
 
 # ---------------------------------
-# AI backend (optional)
+# Optional AI backend
 # ---------------------------------
 AI_API_URL = os.getenv("AI_API_URL")
 
@@ -53,11 +57,11 @@ def health():
     return jsonify({"status": "ok", "service": "EVO-AI backend"})
 
 # ---------------------------------
-# REGISTER (JSON)
+# REGISTER
 # ---------------------------------
 @app.route("/api/register", methods=["POST"])
 def api_register():
-    data = request.get_json()
+    data = request.get_json(force=True)
 
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
@@ -72,14 +76,14 @@ def api_register():
     user = users.insert_one({"email": email, "password": hashed})
 
     session["user_id"] = str(user.inserted_id)
-    return jsonify({"message": "Registered successfully"})
+    return jsonify({"message": "Registered successfully"}), 201
 
 # ---------------------------------
-# LOGIN (JSON)
+# LOGIN
 # ---------------------------------
 @app.route("/api/login", methods=["POST"])
 def api_login():
-    data = request.get_json()
+    data = request.get_json(force=True)
 
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
@@ -93,23 +97,22 @@ def api_login():
         return jsonify({"error": "Invalid email or password"}), 401
 
     session["user_id"] = str(user["_id"])
-    return jsonify({"message": "Login successful"})
+    return jsonify({"message": "Login successful"}), 200
 
 # ---------------------------------
-# CHAT API
+# CHAT
 # ---------------------------------
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = request.get_json()
+    data = request.get_json(force=True)
     message = data.get("message", "").strip()
 
     if not message:
         return jsonify({"response": "❌ Empty message"})
 
-    # If using external AI service
     if AI_API_URL:
         r = requests.post(
             AI_API_URL,
@@ -135,7 +138,7 @@ def api_chat():
 def api_logout():
     session.clear()
     return jsonify({"message": "Logged out"})
-    
+
 # ---------------------------------
 # Run (Render)
 # ---------------------------------
