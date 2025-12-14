@@ -12,21 +12,21 @@ app = Flask(__name__)
 # ---------------------------------
 # Secrets & session
 # ---------------------------------
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback-secret")
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="None",
-    SESSION_COOKIE_SECURE=True
+    SESSION_COOKIE_SAMESITE="None",   # REQUIRED for cross-site cookies
+    SESSION_COOKIE_SECURE=True        # REQUIRED (HTTPS only)
 )
 
 # ---------------------------------
-# Allowed frontend origins
+# Allowed frontend origins (EXACT)
 # ---------------------------------
-ALLOWED_ORIGINS = [
+ALLOWED_ORIGINS = {
     "https://evoai-chatbot-frontend.vercel.app",
     "https://evoai-chatbot-frontend-dyfew1sy0-pinumalla-sai-tejas-projects.vercel.app"
-]
+}
 
 # ---------------------------------
 # MongoDB
@@ -39,12 +39,12 @@ users = db["users"]
 chat_history = db["chat_history"]
 
 # ---------------------------------
-# AI backend (optional)
+# Optional AI backend
 # ---------------------------------
 AI_API_URL = os.getenv("AI_API_URL")
 
 # ---------------------------------
-# CORS HEADERS (MANUAL & RELIABLE)
+# GLOBAL CORS (MOST IMPORTANT FIX)
 # ---------------------------------
 @app.after_request
 def add_cors_headers(response):
@@ -60,15 +60,24 @@ def add_cors_headers(response):
 
 
 # ---------------------------------
-# OPTIONS handler (CRITICAL)
+# OPTIONS HANDLER (PRE-FLIGHT)
 # ---------------------------------
-@app.route("/api/<path:path>", methods=["OPTIONS"])
-def options_handler(path):
-    return make_response("", 204)
+@app.route("/api/<path:any_path>", methods=["OPTIONS"])
+def handle_options(any_path):
+    response = make_response("", 204)
+    origin = request.headers.get("Origin")
+
+    if origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+
+    return response
 
 
 # ---------------------------------
-# Health
+# Health check
 # ---------------------------------
 @app.route("/")
 def health():
@@ -80,7 +89,7 @@ def health():
 # ---------------------------------
 @app.route("/api/register", methods=["POST"])
 def api_register():
-    data = request.get_json(silent=True)
+    data = request.get_json()
     if not data:
         return jsonify({"error": "Invalid JSON"}), 400
 
@@ -105,7 +114,7 @@ def api_register():
 # ---------------------------------
 @app.route("/api/login", methods=["POST"])
 def api_login():
-    data = request.get_json(silent=True)
+    data = request.get_json()
     if not data:
         return jsonify({"error": "Invalid JSON"}), 400
 
@@ -128,7 +137,7 @@ def api_chat():
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = request.get_json(silent=True)
+    data = request.get_json()
     message = data.get("message", "").strip()
 
     if not message:
