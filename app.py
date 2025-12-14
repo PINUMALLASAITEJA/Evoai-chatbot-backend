@@ -17,44 +17,35 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback-secret")
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="None",   # REQUIRED for cross-site cookies
-    SESSION_COOKIE_SECURE=True        # REQUIRED on HTTPS (Render)
+    SESSION_COOKIE_SAMESITE="None",   # REQUIRED for Vercel ↔ Render
+    SESSION_COOKIE_SECURE=True        # REQUIRED (HTTPS)
 )
 
 # ---------------------------------
-# CORS (CORRECT + SAFE)
+# CORS (STRICT + CORRECT)
 # ---------------------------------
+ALLOWED_ORIGINS = [
+    "https://evoai-chatbot-frontend.vercel.app",
+    "https://evoai-chatbot-frontend-8zns9rq1c-pinumalla-sai-tejas-projects.vercel.app"
+]
+
 CORS(
     app,
-    resources={
-        r"/api/*": {
-            "origins": [
-                "https://evoai-chatbot-frontend.vercel.app",
-                "https://evoai-chatbot-frontend-8zns9rq1c-pinumalla-sai-tejas-projects.vercel.app"
-            ]
-        }
-    },
-    supports_credentials=True
+    supports_credentials=True,
+    origins=ALLOWED_ORIGINS
 )
 
 # ---------------------------------
-# Force headers for preflight
+# Force headers (preflight safety)
 # ---------------------------------
 @app.after_request
 def after_request(response):
-    response.headers.add(
-        "Access-Control-Allow-Origin",
-        request.headers.get("Origin", "")
-    )
-    response.headers.add("Access-Control-Allow-Credentials", "true")
-    response.headers.add(
-        "Access-Control-Allow-Headers",
-        "Content-Type, Authorization"
-    )
-    response.headers.add(
-        "Access-Control-Allow-Methods",
-        "GET, POST, OPTIONS"
-    )
+    origin = request.headers.get("Origin")
+    if origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return response
 
 # ---------------------------------
@@ -73,9 +64,9 @@ chat_history = db["chat_history"]
 AI_API_URL = os.getenv("AI_API_URL")
 
 # ---------------------------------
-# Health
+# Health check
 # ---------------------------------
-@app.route("/")
+@app.route("/", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "service": "EVO-AI backend"})
 
@@ -175,6 +166,16 @@ def api_logout():
 
     session.clear()
     return jsonify({"message": "Logged out"})
+
+# ---------------------------------
+# 500 ERROR HANDLER ✅ (ADDED)
+# ---------------------------------
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({
+        "error": "Internal server error",
+        "details": str(e)
+    }), 500
 
 # ---------------------------------
 # Run (Render)
