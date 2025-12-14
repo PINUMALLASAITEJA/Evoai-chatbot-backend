@@ -11,42 +11,31 @@ from flask_cors import CORS
 app = Flask(__name__)
 
 # ---------------------------------
-# Session config (CRITICAL)
+# Session config (MANDATORY for cross-site)
 # ---------------------------------
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback-secret")
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="None",   # REQUIRED for Vercel ↔ Render
-    SESSION_COOKIE_SECURE=True        # REQUIRED (HTTPS)
+    SESSION_COOKIE_SAMESITE="None",
+    SESSION_COOKIE_SECURE=True
 )
 
 # ---------------------------------
-# CORS (STRICT + CORRECT)
+# CORS (FIXED & SAFE)
 # ---------------------------------
-ALLOWED_ORIGINS = [
-    "https://evoai-chatbot-frontend.vercel.app",
-    "https://evoai-chatbot-frontend-8zns9rq1c-pinumalla-sai-tejas-projects.vercel.app"
-]
-
 CORS(
     app,
     supports_credentials=True,
-    origins=ALLOWED_ORIGINS
+    resources={
+        r"/api/*": {
+            "origins": [
+                "https://evoai-chatbot-frontend.vercel.app",
+                "https://*.vercel.app"
+            ]
+        }
+    }
 )
-
-# ---------------------------------
-# Force headers (preflight safety)
-# ---------------------------------
-@app.after_request
-def after_request(response):
-    origin = request.headers.get("Origin")
-    if origin in ALLOWED_ORIGINS:
-        response.headers["Access-Control-Allow-Origin"] = origin
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    return response
 
 # ---------------------------------
 # MongoDB
@@ -59,16 +48,11 @@ users = db["users"]
 chat_history = db["chat_history"]
 
 # ---------------------------------
-# Optional AI backend
-# ---------------------------------
-AI_API_URL = os.getenv("AI_API_URL")
-
-# ---------------------------------
 # Health check
 # ---------------------------------
-@app.route("/", methods=["GET"])
+@app.route("/")
 def health():
-    return jsonify({"status": "ok", "service": "EVO-AI backend"})
+    return jsonify({"status": "ok"})
 
 # ---------------------------------
 # REGISTER
@@ -76,12 +60,9 @@ def health():
 @app.route("/api/register", methods=["POST", "OPTIONS"])
 def api_register():
     if request.method == "OPTIONS":
-        return jsonify({}), 200
+        return "", 204
 
-    data = request.get_json(silent=True)
-    if not data:
-        return jsonify({"error": "Invalid JSON"}), 400
-
+    data = request.get_json()
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
 
@@ -103,12 +84,9 @@ def api_register():
 @app.route("/api/login", methods=["POST", "OPTIONS"])
 def api_login():
     if request.method == "OPTIONS":
-        return jsonify({}), 200
+        return "", 204
 
-    data = request.get_json(silent=True)
-    if not data:
-        return jsonify({"error": "Invalid JSON"}), 400
-
+    data = request.get_json()
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
 
@@ -129,24 +107,18 @@ def api_login():
 @app.route("/api/chat", methods=["POST", "OPTIONS"])
 def api_chat():
     if request.method == "OPTIONS":
-        return jsonify({}), 200
+        return "", 204
 
     if "user_id" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = request.get_json(silent=True)
-    if not data:
-        return jsonify({"error": "Invalid JSON"}), 400
-
+    data = request.get_json()
     message = data.get("message", "").strip()
+
     if not message:
         return jsonify({"response": "❌ Empty message"})
 
-    if AI_API_URL:
-        r = requests.post(AI_API_URL, json={"message": message}, timeout=60)
-        response = r.json().get("response", "No AI response")
-    else:
-        response = f"You said: {message}"
+    response = f"You said: {message}"
 
     chat_history.insert_one({
         "user_id": session["user_id"],
@@ -162,20 +134,10 @@ def api_chat():
 @app.route("/api/logout", methods=["POST", "OPTIONS"])
 def api_logout():
     if request.method == "OPTIONS":
-        return jsonify({}), 200
+        return "", 204
 
     session.clear()
     return jsonify({"message": "Logged out"})
-
-# ---------------------------------
-# 500 ERROR HANDLER ✅ (ADDED)
-# ---------------------------------
-@app.errorhandler(500)
-def internal_error(e):
-    return jsonify({
-        "error": "Internal server error",
-        "details": str(e)
-    }), 500
 
 # ---------------------------------
 # Run (Render)
