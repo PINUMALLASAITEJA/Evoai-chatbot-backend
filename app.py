@@ -30,6 +30,7 @@ CORS(
         r"/api/*": {
             "origins": [
                 "https://evoai-chatbot-frontend.vercel.app"
+                "https://evoai-chatbot-frontend-dyfew1sy0-pinumalla-sai-tejas-projects.vercel.app"
             ]
         }
     },
