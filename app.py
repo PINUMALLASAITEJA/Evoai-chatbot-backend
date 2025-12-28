@@ -11,29 +11,22 @@ from flask_cors import CORS
 app = Flask(__name__)
 
 # -------------------------------------------------
-# Secrets & session
+# Session config (REQUIRED for cross-site cookies)
 # -------------------------------------------------
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback-secret")
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="None",   # required for cross-site cookies
-    SESSION_COOKIE_SECURE=True        # required for HTTPS (Render/Vercel)
+    SESSION_COOKIE_SAMESITE="None",
+    SESSION_COOKIE_SECURE=True
 )
 
 # -------------------------------------------------
-# CORS (CORRECT WAY — DO NOT MANUALLY SET HEADERS)
+# CORS (ALLOW ALL VERCEL DEPLOYMENTS SAFELY)
 # -------------------------------------------------
 CORS(
     app,
-    resources={
-        r"/api/*": {
-            "origins": [
-                "https://evoai-chatbot-frontend.vercel.app"
-                "https://evoai-chatbot-frontend-dyfew1sy0-pinumalla-sai-tejas-projects.vercel.app"
-            ]
-        }
-    },
+    resources={r"/api/*": {"origins": "*"}},
     supports_credentials=True
 )
 
@@ -84,7 +77,6 @@ def api_register():
     })
 
     session["user_id"] = str(user.inserted_id)
-
     return jsonify({"message": "Registered successfully"}), 201
 
 # -------------------------------------------------
@@ -103,12 +95,10 @@ def api_login():
         return jsonify({"error": "Email and password required"}), 400
 
     user = users.find_one({"email": email})
-
     if not user or not check_password_hash(user["password"], password):
         return jsonify({"error": "Invalid email or password"}), 401
 
     session["user_id"] = str(user["_id"])
-
     return jsonify({"message": "Login successful"}), 200
 
 # -------------------------------------------------
@@ -128,11 +118,7 @@ def api_chat():
         return jsonify({"response": "❌ Empty message"})
 
     if AI_API_URL:
-        r = requests.post(
-            AI_API_URL,
-            json={"message": message},
-            timeout=60
-        )
+        r = requests.post(AI_API_URL, json={"message": message}, timeout=60)
         response = r.json().get("response", "No AI response")
     else:
         response = f"You said: {message}"
